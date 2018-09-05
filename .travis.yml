@@ -10,7 +10,7 @@ dist: trusty
 env:
   global:
     - MODE="test"
-    - PYTHON_VERSION="3.6"
+    - PYTHON_VERSION="3.7"
     - NENGO_DL_TEST_PRECISION="32"
     - NENGO_DL_TEST_UNROLL="1"
     - NENGO_DL_TEST_INFERENCE_ONLY="False"

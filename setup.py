@@ -33,8 +33,8 @@ else:
 
 
 def read(*filenames, **kwargs):
-    encoding = kwargs.get('encoding', 'utf-8')
-    sep = kwargs.get('sep', '\n')
+    encoding = kwargs.get("encoding", "utf-8")
+    sep = kwargs.get("sep", "\n")
     buf = []
     for filename in filenames:
         with io.open(filename, encoding=encoding) as f:
@@ -44,7 +44,7 @@ def read(*filenames, **kwargs):
 
 root = os.path.dirname(os.path.realpath(__file__))
 version = runpy.run_path(os.path.join(
-    root, 'nengo_dl', 'version.py'))['version']
+    root, "nengo_dl", "version.py"))["version"]
 
 install_requires = [
     "nengo>=2.7.0",
@@ -84,7 +84,7 @@ setup(
     url="https://www.nengo.ai/nengo-dl",
     license="Free for non-commercial use",
     description="Deep learning integration for Nengo",
-    long_description=read('README.rst', 'CHANGES.rst'),
+    long_description=read("README.rst", "CHANGES.rst"),
     install_requires=install_requires,
     extras_require={
         "all": docs_require + tests_require,
@@ -93,17 +93,18 @@ setup(
     },
     entry_points={"nengo.backends": ["dl = nengo_dl:Simulator"]},
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'Intended Audience :: Science/Research',
-        'License :: Free for non-commercial use',
-        'Operating System :: Microsoft :: Windows',
-        'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Topic :: Scientific/Engineering',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Science/Research",
+        "License :: Free for non-commercial use",
+        "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
 )
