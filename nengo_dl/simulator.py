@@ -19,6 +19,7 @@ from nengo.exceptions import (
     ReadonlyError, SimulatorClosed, NengoWarning, SimulationError,
     ValidationError)
 from nengo.solvers import NoSolver
+import nengo_loihi
 import numpy as np
 import pkg_resources
 import tensorflow as tf
@@ -895,6 +896,12 @@ class Simulator(object):
                         "function": lambda x, weights=weights: np.zeros(
                             weights.shape[0]),
                         "transform": 1})
+                elif isinstance(obj.transform, nengo_loihi.Conv2D):
+                    params.append({"transform": nengo_loihi.Conv2D(
+                        weights.shape[-1], obj.transform.input_shape,
+                        kernel=weights, kernel_size=weights.shape[1:-1],
+                        strides=obj.transform.strides,
+                        mode=obj.transform.mode)})
                 else:
                     if all(x == 1 for x in weights.shape):
                         weights = np.squeeze(weights)
