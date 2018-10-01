@@ -11,6 +11,7 @@ from nengo.exceptions import BuildError
 from nengo.utils.compat import iteritems
 from nengo.utils.graphs import toposort, BidirectionalDAG
 from nengo.utils.simulator import operator_dependency_graph
+from nengo_loihi import conv
 import numpy as np
 
 from nengo_dl import (process_builders, builder, tensor_node,
@@ -145,6 +146,9 @@ def mergeable(op, chosen_ops):
             # for pes the error signals also have to have the same shape
             if op.error.shape[0] != c.error.shape[0]:
                 return False
+    elif isinstance(op, conv.Conv2DInc):
+        # TODO: support merging
+        return False
 
     return True
 
