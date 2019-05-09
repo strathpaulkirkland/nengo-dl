@@ -18,7 +18,7 @@
         export PATH="/home/travis-ci/miniconda3/bin:\$PATH"
         HW_STATUS=0
         cd /tmp/nengo-dl-$TRAVIS_JOB_NUMBER
-        conda create -q -y -n travis-ci-$TRAVIS_JOB_NUMBER python=$PYTHON_VERSION $TF_VERSION
+        conda create -q -y -n travis-ci-$TRAVIS_JOB_NUMBER python=$TRAVIS_PYTHON_VERSION $TF_VERSION
         source activate travis-ci-$TRAVIS_JOB_NUMBER
         pip install $NENGO_VERSION $NUMPY_VERSION
         pip install git+https://github.com/drasmuss/spaun2.0.git
