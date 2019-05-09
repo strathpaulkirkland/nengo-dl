@@ -28,6 +28,7 @@ ci_scripts:
   - template: gpu
 
 travis_yml:
+  bones_install: git+https://github.com/nengo/nengo-bones.git
   python_version: 3.6
   global_vars:
     NUMPY_VERSION: numpy
