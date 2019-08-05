@@ -47,18 +47,23 @@ class TensorSignal:
         assert isinstance(indices, (tuple, list, np.ndarray))
         self._indices = np.asarray(indices)
         self._indices.flags.writeable = False
-        self._tf_shape = None
-        self._tf_indices = None
-        self._tf_indices_nd = None
-        self._tf_slice = -1
-
         self.key = key
         self.dtype = dtype
         self.shape = shape
         self.minibatch_size = minibatch_size
         self.constant = constant
-
         self.label = label
+
+        self.reset()
+
+    def reset(self):
+        """
+        Reset cached Tensors.
+        """
+        self._tf_shape = None
+        self._tf_indices = None
+        self._tf_indices_nd = None
+        self._tf_slice = -1
 
     @property
     def indices(self):
@@ -293,11 +298,27 @@ class SignalDict(Mapping):
         self.minibatch_size = minibatch_size
         self.inference_only = inference_only
         self.sig_map = {}
-        self.bases = OrderedDict()  # will be filled in tensor_graph.build_loop
         self.base_params = OrderedDict()
+
+        self.reset()
+
+    def reset(self):
+        """
+        Reset build-specific data structures.
+
+        These are data structures that are filled out during the TensorGraph build
+        process (and therefore need to be re-initialized if we build the model again in
+        the same graph), as opposed to data that is constant for a given Nengo model.
+        """
+        # these values will be re-generated whenever the model is rebuilt
         self.base_tensors = OrderedDict()
         self.constant_phs = OrderedDict()
         self.user_vars = []
+        self.bases = OrderedDict()
+
+        # reset TensorSignals
+        for sig in self.sig_map.values():
+            sig.reset()
 
         # logging
         self.read_types = defaultdict(int)
@@ -678,4 +699,5 @@ class SignalDict(Mapping):
         only the variables associated with the NengoDL simulation.
         """
 
-        return [v[0] for v in self.base_params.values()] + self.user_vars
+        # TODO: remove this and use keras variable tracking instead
+        return list(self.base_params.values()) + self.user_vars

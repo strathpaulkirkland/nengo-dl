@@ -21,6 +21,8 @@ from nengo.neurons import Direct
 from nengo.utils.magic import decorator
 import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.python.training.tracking import base as trackable
 
 from nengo_dl import builder, graph_optimizer, signals, utils, tensor_node, config
 from nengo_dl.compat import (
@@ -39,11 +41,11 @@ def with_self(wrapped, instance, args, kwargs):
     """A decorator that can be used to ensure that any ops created within the
     wrapped method will be added to the TensorGraph object's graph."""
 
-    with instance.graph.as_default(), instance.graph.device(instance.device):
+    with tf.device(instance.device):
         return wrapped(*args, **kwargs)
 
 
-class TensorGraph:
+class TensorGraph(keras.layers.Layer):
     """
     Manages the construction of the TensorFlow symbolic computation graph.
 
@@ -71,16 +73,21 @@ class TensorGraph:
     def __init__(
         self, model, dt, unroll_simulation, dtype, minibatch_size, device, progress
     ):
+        super().__init__(
+            name="TensorGraph",
+            dynamic=False,
+            trainable=not config.get_setting(model, "inference_only", False),
+            dtype=dtype,
+        )
+
         self.model = model
         self.dt = dt
         self.unroll = unroll_simulation
-        self.dtype = dtype
         self.minibatch_size = minibatch_size
         self.device = device
-        self.graph = tf.Graph()
-        self.inference_only = config.get_setting(model, "inference_only", False)
+        self.inference_only = not self.trainable
         self.signals = signals.SignalDict(
-            self.dtype, self.minibatch_size, self.inference_only
+            dtype, self.minibatch_size, self.inference_only
         )
 
         # find invariant inputs (nodes that don't receive any input other
@@ -89,11 +96,12 @@ class TensorGraph:
         if self.model.toplevel is None:
             self.invariant_inputs = OrderedDict()
         else:
-            self.invariant_inputs = OrderedDict(
-                (n, n.output)
-                for n in self.model.toplevel.all_nodes
-                if n.size_in == 0 and not isinstance(n, tensor_node.TensorNode)
-            )
+            with trackable.no_automatic_dependency_tracking_scope(self):
+                self.invariant_inputs = OrderedDict(
+                    (n, n.output)
+                    for n in self.model.toplevel.all_nodes
+                    if n.size_in == 0 and not isinstance(n, tensor_node.TensorNode)
+                )
 
         # filter unused operators
         # remove TimeUpdate because it is executed as part of the simulation
@@ -164,28 +172,126 @@ class TensorGraph:
             self.create_signals(sigs)
 
         logger.info("Optimized plan length: %d", len(self.plan))
-        logger.info("Number of base arrays: %d", len(self.base_arrays_init))
-
-        # initialize op builder
-        build_config = builder.BuildConfig(
-            inference_only=self.inference_only,
-            lif_smoothing=config.get_setting(self.model, "lif_smoothing"),
-            cpu_only=self.device == "/cpu:0" or not utils.tf_gpu_installed,
-        )
-        self.op_builder = builder.Builder(
-            self.plan, self.graph, self.signals, build_config
+        logger.info(
+            "Number of base arrays: %d, %d",
+            *tuple(len(x) for x in self.base_arrays_init),
         )
 
     @with_self
-    def build(self, progress):
+    def build_inputs(self):
+        """
+        Sets up placeholders for all the external values required to run a model.
+
+        Returns
+        -------
+        inputs : list of ``tf.Tensor``
+            Placeholder tensors that will be filled in before simulation runs.
+        """
+
+        # initial simulation step number
+        step = tf_compat.placeholder(tf.int32, shape=(), name="step")
+
+        # terminal simulation step number
+        stop = tf_compat.placeholder(tf.int32, shape=(), name="stop")
+
+        # whether or not the simulator is currently training
+        training = tf_compat.placeholder(tf.bool, shape=(), name="training")
+
+        # internal signal placeholders
+        internal_phs = []
+        for v in self.base_arrays_init[False].values():
+            name = "%s_%s" % (v.dtype, "_".join(str(x) for x in v.shape))
+
+            internal_phs.append(
+                tf_compat.placeholder(v.dtype, v.shape, name="base_tensors/%s" % name)
+            )
+
+        # input placeholders
+        input_phs = [
+            tf_compat.placeholder(
+                self.dtype,
+                (self.minibatch_size, None, n.size_out),
+                name="%s_ph" % utils.sanitize_name(n),
+            )
+            for n in self.invariant_inputs
+            if self.model.sig[n]["out"] in self.signals
+        ]
+
+        # target placeholders
+        target_phs = [
+            tf_compat.placeholder_with_default(
+                tf.zeros((self.minibatch_size, 0, p.size_in), dtype=self.dtype),
+                shape=(self.minibatch_size, None, p.size_in),
+                name="%s_ph" % utils.sanitize_name(p),
+            )
+            for p in self.model.probes
+        ]
+
+        return [step, stop, training] + internal_phs + input_phs + target_phs
+
+    @with_self
+    def build(self, input_shape=None):
+        """
+        Create any Variables used in the model.
+        """
+
+        super().build(input_shape)
+
+        assert len(self.signals.base_params) == 0
+        for k, v in self.base_arrays_init[True].items():
+            name = "%s_%s" % (v.dtype, "_".join(str(x) for x in v.shape))
+
+            self.signals.base_params[k] = self.add_weight(
+                initializer=tf.initializers.constant(v),
+                shape=v.shape,
+                dtype=v.dtype,
+                trainable=True,
+                name="base_params/%s" % name,
+            )
+
+        logger.debug("created base arrays")
+        logger.debug([str(x) for x in self.signals.base_params.values()])
+
+    @with_self
+    @tf.autograph.experimental.do_not_convert  # TODO: enable autograph
+    def call(self, inputs, training=False, progress=None):
         """
         Constructs a new graph to simulate the model.
 
+        Parameters
+        ----------
+        inputs : list of ``tf.Tensor``
+            Input placeholders for the network (must match the order defined in
+            `.build_inputs`).
+        training : bool
+            Whether the network is being run in training or inference mode.
         progress : `.utils.ProgressBar`
             Progress bar for construction stage
+
+        Returns
+        -------
+        probe_arrays : list of ``tf.Tensor``
+            Tensors representing the output of all the Probes in the network (order
+            corresponding to ``self.model.probes``, which is the order the Probes were
+            instantiated).
         """
 
-        self.target_phs = {}
+        super().call(inputs, training=training)
+
+        # TODO: do something with training argument
+
+        if progress is None:
+            progress = utils.NullProgressBar()
+
+        # reset signaldict
+        self.signals.reset()
+
+        # split up inputs (order defined in build_inputs)
+        self.step_var = inputs[0]
+        self.stop_var = inputs[1]
+        self.signals.training = inputs[2]
+        input_idx = 3
+
         self.outputs = {}
         self.optimizers = {}
 
@@ -195,53 +301,37 @@ class TensorGraph:
         self.signals.zero = tf.constant(0, self.dtype)
         self.signals.one = tf.constant(1, self.dtype)
 
+        # variable to track training step
         if not self.inference_only:
-            # this variable controls behaviour in the simulation that is
-            # conditional on whether we are doing training or inference
-            self.signals.training = tf_compat.placeholder(
-                tf.bool, shape=(), name="training"
-            )
-
-            # variable to track training step
             self.training_step = tf_compat.train.get_or_create_global_step()
         else:
             self.training_step = None
 
-        # create base arrays
-        sub = progress.sub("creating base arrays")
-        unique_ids = defaultdict(int)
-        for k, (v, trainable) in sub(self.base_arrays_init.items()):
-            name = "%s_%s_%s_%d" % (
-                v.dtype,
-                "_".join(str(x) for x in v.shape),
-                trainable,
-                unique_ids[(v.dtype, v.shape, trainable)],
-            )
-            unique_ids[(v.dtype, v.shape, trainable)] += 1
-
-            if trainable:
-                # we initialize all the variables from placeholders, and then
-                # feed in the initial values when the init op is called. this
-                # prevents TensorFlow from storing large constants in the graph
-                # def, which can cause problems for large models
-                ph = tf_compat.placeholder(v.dtype, v.shape, name="%s_init" % name)
-                var = tf.Variable(
-                    initial_value=ph, trainable=trainable, name="base_params/%s" % name
-                )
-                self.signals.base_params[k] = (var, ph, v)
-            else:
-                ph = tf_compat.placeholder(
-                    v.dtype, v.shape, name="base_tensors/%s" % name
-                )
-                self.signals.base_tensors[k] = (ph, v)
-
-        logger.debug("created base arrays")
-        logger.debug([str(x[0]) for x in self.signals.base_tensors.values()])
-        logger.debug([str(x[0]) for x in self.signals.base_params.values()])
+        # set up internal signals
+        for k, v in self.base_arrays_init[False].items():
+            self.signals.base_tensors[k] = (inputs[input_idx], v)
+            input_idx += 1
 
         # set up invariant inputs
-        sub = progress.sub("building inputs")
-        self.build_inputs(sub)
+        self.input_phs = {}
+        for n in self.invariant_inputs:
+            if self.model.sig[n]["out"] in self.signals:
+                self.input_phs[n] = inputs[input_idx]
+                input_idx += 1
+
+        # set up target placeholders
+        self.target_phs = {}
+        for p in self.model.probes:
+            self.target_phs[p] = inputs[input_idx]
+            input_idx += 1
+
+        # initialize op builder
+        build_config = builder.BuildConfig(
+            inference_only=self.inference_only,
+            lif_smoothing=config.get_setting(self.model, "lif_smoothing"),
+            cpu_only=self.device == "/cpu:0" or not utils.tf_gpu_installed,
+        )
+        self.op_builder = builder.Builder(self.plan, self.signals, build_config)
 
         # pre-build stage
         with progress.sub("pre-build stage", max_value=len(self.plan)) as sub:
@@ -249,13 +339,15 @@ class TensorGraph:
 
         # build stage
         with progress.sub("build stage", max_value=len(self.plan) * self.unroll) as sub:
-            self.build_loop(sub)
+            self._build_loop(sub)
 
         # ops for initializing variables (will be called by simulator)
         all_vars = self.signals.all_variables
         if not self.inference_only:
             all_vars.append(self.training_step)
         self.variable_init_op = tf_compat.variables_initializer(all_vars)
+
+        assert input_idx == len(inputs)
 
         # logging
         logger.info(
@@ -269,7 +361,9 @@ class TensorGraph:
         for x in self.signals.write_types.items():
             logger.info("    %s: %d", *x)
 
-    def build_step(self, progress):
+        return list(self.probe_arrays.values())
+
+    def _build_step(self, progress):
         """
         Build the operators that execute a single simulation timestep
         into the graph.
@@ -341,7 +435,7 @@ class TensorGraph:
 
         return probe_tensors, side_effects
 
-    def build_loop(self, progress):
+    def _build_loop(self, progress):
         """
         Build simulation loop.
 
@@ -358,6 +452,7 @@ class TensorGraph:
             # fill in signals.bases (note: we need to do this here because we
             # need to use the versions of the base tensors from inside the
             # loop, not the static variables in signals.base_tensors)
+            # TODO: test that rebuilding multiple times works properly
             assert len(self.signals.bases) == 0
             for i, key in enumerate(self.signals.base_tensors):
                 self.signals.bases[key] = base_tensors[i]
@@ -365,21 +460,21 @@ class TensorGraph:
             # (since we'll only be reading inside the loop, not updating
             # the variables)
             for key in self.signals.base_params:
-                self.signals.bases[key] = self.signals.base_params[key][0]
+                self.signals.bases[key] = self.signals.base_params[key]
 
             for iter in range(self.unroll):
                 logger.debug("BUILDING ITERATION %d", iter)
-                with self.graph.name_scope("iteration_%d" % iter):
+                with tf.name_scope("iteration_%d" % iter):
                     # note: nengo step counter is incremented at the beginning
                     # of the timestep
                     step += 1
                     self.signals.step = step
 
                     # fill in invariant input data
-                    for n in self.input_ph:
+                    for n in self.input_phs:
                         self.signals.scatter(
                             self.signals[self.model.sig[n]["out"]],
-                            self.input_ph[n][loop_i],
+                            tf.transpose(self.input_phs[n][:, loop_i]),
                         )
 
                     # build the operators for a single step
@@ -388,8 +483,8 @@ class TensorGraph:
                     # simulation step (side effects and probes) from the
                     # previous timestep are executed before the next step
                     # starts
-                    with self.graph.control_dependencies([loop_i]):
-                        probe_tensors, side_effects = self.build_step(progress)
+                    with tf.control_dependencies([loop_i]):
+                        probe_tensors, side_effects = self._build_step(progress)
 
                     # copy probe data to array
                     for i, p in enumerate(probe_tensors):
@@ -412,7 +507,7 @@ class TensorGraph:
                     # increment. we also need to make sure that all the probe
                     # reads happen before those values get overwritten on the
                     # next timestep
-                    with self.graph.control_dependencies(side_effects + probe_tensors):
+                    with tf.control_dependencies(side_effects + probe_tensors):
                         loop_i += 1
 
             base_tensors = tuple(
@@ -421,8 +516,6 @@ class TensorGraph:
 
             return step, stop, loop_i, probe_arrays, base_tensors
 
-        self.step_var = tf_compat.placeholder(tf.int32, shape=(), name="step")
-        self.stop_var = tf_compat.placeholder(tf.int32, shape=(), name="stop")
         loop_i = tf.constant(0)
 
         probe_arrays = [
@@ -459,30 +552,8 @@ class TensorGraph:
                 x = tf.expand_dims(x, 0)
 
             self.probe_arrays[p] = x
-        self.final_internal_state = {
-            base: state for base, state in zip(self.signals.base_tensors, loop_vars[4])
-        }
 
-    def build_inputs(self, progress):
-        """
-        Sets up the inputs in the model (which will be computed outside of
-        TensorFlow and fed in each simulation block).
-
-        Parameters
-        ----------
-        progress : `.utils.ProgressBar`
-            Progress bar for input construction
-        """
-
-        self.input_ph = {}
-        for n in progress(self.invariant_inputs):
-            if self.model.sig[n]["out"] in self.signals:
-                # set up a placeholder input for this node
-                self.input_ph[n] = tf_compat.placeholder(
-                    self.dtype,
-                    (None, n.size_out, self.minibatch_size),
-                    name="%s_ph" % utils.sanitize_name(n),
-                )
+        self.final_internal_state = loop_vars[4]
 
     def build_optimizer_func(self, optimizer, loss, direct_grads=None):
         """
@@ -654,7 +725,11 @@ class TensorGraph:
         # in that collection before and after building the function to
         # try to capture those variables as well.
         # TODO: remove this if we switch completely to keras optimizers
-        pre_vars = set(self.graph.get_collection(tf_compat.GraphKeys.GLOBAL_VARIABLES))
+        pre_vars = set(
+            tf_compat.get_default_graph().get_collection(
+                tf_compat.GraphKeys.GLOBAL_VARIABLES
+            )
+        )
         for probes, out in outputs.items():
             is_tuple = isinstance(probes, tuple)
             probe_arrays = (
@@ -684,15 +759,6 @@ class TensorGraph:
                 if nargs == 1:
                     args = [probe_arrays]
                 elif nargs == 2:
-                    for p in probes if is_tuple else (probes,):
-                        # create a placeholder for the target values if one
-                        # hasn't been created yet
-                        if p not in self.target_phs:
-                            self.target_phs[p] = tf_compat.placeholder(
-                                self.dtype,
-                                (self.minibatch_size, None, p.size_in),
-                                name="%s_ph" % utils.sanitize_name(p),
-                            )
                     target_phs = (
                         tuple(self.target_phs[p] for p in probes)
                         if is_tuple
@@ -734,7 +800,11 @@ class TensorGraph:
         # collect any new variables created during build process
         self.signals.user_vars.extend(new_vars)
         new_vars.extend(
-            set(self.graph.get_collection(tf_compat.GraphKeys.GLOBAL_VARIABLES))
+            set(
+                tf_compat.get_default_graph().get_collection(
+                    tf_compat.GraphKeys.GLOBAL_VARIABLES
+                )
+            )
             - pre_vars
         )
         new_vars_init = (
@@ -876,6 +946,14 @@ class TensorGraph:
                 (None if len(inits) == 0 else inits),
             )
 
+    # def compute_output_signature(self, input_signature):
+    #     inputs = self.build_inputs()
+    #     for spec, ph in zip(input_signature, inputs):
+    #         assert spec.shape == ph.shape
+    #         assert spec.dtype == ph.dtype
+    #
+    #     return [tf.TensorSpec(p.shape, dtype=p.dtype) for p in self.probe_arrays]
+
     @with_self
     def get_tensor(self, sig):
         """
@@ -895,7 +973,7 @@ class TensorGraph:
         tensor_sig = self.signals[sig]
 
         try:
-            base = self.signals.base_params[tensor_sig.key][0]
+            base = self.signals.base_params[tensor_sig.key]
         except KeyError:
             base = self.signals.base_tensors[tensor_sig.key][0]
 
@@ -1068,8 +1146,8 @@ class TensorGraph:
             memory (e.g., output from `.graph_optimizer.order_signals`)
         """
 
-        float_type = self.dtype.as_numpy_dtype
-        base_arrays = OrderedDict()
+        float_type = np.dtype(self.dtype)
+        base_arrays = [OrderedDict(), OrderedDict()]
         curr_keys = {}
         sig_idxs = {s: i for i, s in enumerate(sigs)}
 
@@ -1156,13 +1234,13 @@ class TensorGraph:
                     tuple(1 for _ in shape) + (self.minibatch_size,),
                 )
 
-            if key in base_arrays:
-                base_arrays[key][0].append(initial_value)
-                base_arrays[key][2] += shape[0]
+            if key in base_arrays[sig.trainable]:
+                base_arrays[sig.trainable][key][0].append(initial_value)
+                base_arrays[sig.trainable][key][1] += shape[0]
             else:
-                base_arrays[key] = [[initial_value], sig.trainable, shape[0]]
+                base_arrays[sig.trainable][key] = [[initial_value], shape[0]]
 
-            n = base_arrays[key][-1]
+            n = base_arrays[sig.trainable][key][-1]
             indices = np.arange(n - shape[0], n)
 
             tensor_sig = self.signals.get_tensor_signal(
@@ -1173,9 +1251,11 @@ class TensorGraph:
             logger.debug(sig)
             logger.debug(tensor_sig)
 
-        for key in base_arrays:
-            arrs, t, _ = base_arrays[key]
-            base_arrays[key] = (np.concatenate(arrs, axis=0), t)
+        for trainable in (True, False):
+            for key in base_arrays[trainable]:
+                base_arrays[trainable][key] = np.concatenate(
+                    base_arrays[trainable][key][0], axis=0
+                )
 
         # add any signal views to the sig_map
         all_views = [
@@ -1224,7 +1304,7 @@ class TensorGraph:
             if sig.minibatched:
                 initial_value = initial_value[..., None]
             assert np.allclose(
-                base_arrays[tensor_sig.key][0][tensor_sig.indices],
+                base_arrays[sig.trainable][tensor_sig.key][tensor_sig.indices],
                 initial_value.astype(dtype),
             )
 
@@ -1233,9 +1313,11 @@ class TensorGraph:
             "\n".join(
                 [
                     str((k, v.dtype, v.shape, trainable))
-                    for k, (v, trainable) in base_arrays.items()
+                    for trainable in [True, False]
+                    for k, v in base_arrays[trainable].items()
                 ]
             )
         )
 
-        self.base_arrays_init = base_arrays
+        with trackable.no_automatic_dependency_tracking_scope(self):
+            self.base_arrays_init = base_arrays
