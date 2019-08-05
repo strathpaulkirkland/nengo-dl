@@ -1649,14 +1649,28 @@ def test_tf_seed(Simulator, seed):
 
     assert np.allclose(sim.data[p], sim_seed.data[p])
 
-    with Simulator(net, seed=seed + 1) as sim_reset:
-        sim_reset.step()
 
-        assert not np.allclose(sim.data[p], sim_reset.data[p])
+@pytest.mark.xfail(reason="TensorFlow does not support resetting RNG")
+def test_tf_rng_reset(Simulator, seed):
+    # TODO: support this using tf.random.experimental; see
+    #  https://github.com/nengo/nengo-dl/issues/98
 
-        sim_reset.reset(seed=seed)
+    with nengo.Network() as net:
+        a = TensorNode(lambda t: tf.random.uniform((1, 1), dtype=t.dtype))
+        p = nengo.Probe(a)
 
-        assert np.allclose(sim.data[p], sim_reset.data[p])
+    with Simulator(net, seed=seed) as sim:
+        sim.step()
+
+        data = sim.data[p]
+
+        sim.reset(seed=seed + 1)
+        sim.step()
+        assert not np.allclose(sim.data[p], data)
+
+        sim.reset(seed=seed)
+        sim.step()
+        assert np.allclose(sim.data[p], data)
 
 
 def test_pickle_error(Simulator):
