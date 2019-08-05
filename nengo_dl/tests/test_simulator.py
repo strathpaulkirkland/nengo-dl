@@ -491,7 +491,7 @@ def test_generate_inputs(Simulator, seed):
     with Simulator(net, minibatch_size=2, unroll_simulation=3) as sim:
         feed = sim._generate_inputs({inp[0]: np.zeros((2, 3, 1))}, 3)
 
-        ph = [sim.tensor_graph.input_ph[x] for x in inp]
+        ph = [sim.tensor_graph.input_phs[x] for x in inp]
 
         assert len(sim.tensor_graph.invariant_inputs) == len(inp)
         assert len(feed) == len(inp)
@@ -527,9 +527,9 @@ def test_save_load_params(Simulator, tmpdir):
 
     with Simulator(net) as sim:
         weights_var = [
-            x[0]
+            x
             for x in sim.tensor_graph.signals.base_params.values()
-            if x[0].get_shape() == (1, 10)
+            if x.get_shape() == (1, 10)
         ][0]
         enc_var = sim.tensor_graph.signals.base_tensors[
             sim.tensor_graph.signals[sim.model.sig[ens]["encoders"]].key
@@ -557,9 +557,9 @@ def test_save_load_params(Simulator, tmpdir):
 
     with Simulator(net2) as sim:
         weights_var = [
-            x[0]
+            x
             for x in sim.tensor_graph.signals.base_params.values()
-            if x[0].get_shape() == (1, 10)
+            if x.get_shape() == (1, 10)
         ][0]
         enc_var = sim.tensor_graph.signals.base_tensors[
             sim.tensor_graph.signals[sim.model.sig[ens]["encoders"]].key
@@ -1117,7 +1117,7 @@ def test_simulation_data(Simulator, seed):
             base = sim.tensor_graph.signals.base_tensors[tensor_sig.key][0]
             sim._internal_state[base][...] = 1
         else:
-            base = sim.tensor_graph.signals.base_params[tensor_sig.key][0]
+            base = sim.tensor_graph.signals.base_params[tensor_sig.key]
             op = tf_compat.assign(base, tf.ones_like(base))
             sim.sess.run(op)
 
@@ -1494,7 +1494,6 @@ def test_fill_feed(Simulator):
     with nengo.Network() as net:
         a = nengo.Node([0])
         p0 = nengo.Probe(a)
-        p1 = nengo.Probe(a)
 
     with Simulator(net) as sim:
         # build an objective with p0 in it, so that it will be added to the
@@ -1503,10 +1502,6 @@ def test_fill_feed(Simulator):
 
         # filling p0 will work fine
         sim._fill_feed(1, data={p0: np.zeros((1, 1, 1))})
-
-        # validation error if filling p1
-        with pytest.raises(ValidationError):
-            sim._fill_feed(1, data={p1: np.zeros((1, 1, 1))})
 
 
 @pytest.mark.parametrize("neuron_type", (nengo.SpikingRectifiedLinear(), nengo.LIF()))

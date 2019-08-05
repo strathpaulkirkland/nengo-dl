@@ -2,7 +2,6 @@
 
 from nengo.exceptions import BuildError
 import pytest
-import tensorflow as tf
 
 from nengo_dl.builder import Builder, OpBuilder, NengoModel
 from nengo_dl.tests import dummies
@@ -17,7 +16,7 @@ def test_custom_builder():
         updates = None
 
     ops = (TestOp(),)
-    builder = Builder([ops], tf.Graph(), None, None)
+    builder = Builder([ops], None, None)
     progress = NullProgressBar()
 
     # error if no builder registered

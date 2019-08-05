@@ -95,6 +95,9 @@ class Simulator:
         self.seed = seed
         self._internal_state = None
 
+        # TODO: remove this once keras is managing the graph
+        tf_compat.reset_default_graph()
+
         # TODO: multi-GPU support
 
         if device is None and not utils.tf_gpu_installed:
@@ -158,14 +161,13 @@ class Simulator:
             )
 
         # set TensorFlow graph seed
-        with self.tensor_graph.graph.as_default():
-            tf_compat.set_random_seed(self.seed)
+        tf.random.set_seed(self.seed)
 
         # construct graph
         with ProgressBar(
             "Constructing graph", "Construction", max_value=None
         ) as progress:
-            self.tensor_graph.build(progress)
+            self.tensor_graph(self.tensor_graph.build_inputs(), progress=progress)
 
         # output simulation data for viewing via TensorBoard
         if tensorboard is not None:
@@ -181,7 +183,7 @@ class Simulator:
             )
             self.summary = tf_compat.summary.FileWriter(
                 os.path.join(tensorboard, "run_%d" % run_number),
-                graph=self.tensor_graph.graph,
+                graph=tf_compat.get_default_graph(),
             )
         else:
             self.summary = None
@@ -206,9 +208,7 @@ class Simulator:
                 x = getattr(x, a)
             setattr(x, attrs[-1], v)
 
-        self.sess = tf_compat.Session(
-            graph=self.tensor_graph.graph, config=session_config
-        )
+        self.sess = tf_compat.Session(config=session_config)
 
         self.reset(seed=seed)
 
@@ -232,13 +232,12 @@ class Simulator:
         self.time = 0.0
 
         # initialize variables and internal simulation state
-        with self.tensor_graph.graph.as_default():
-            # user_init_op cannot be pre-built like the others,
-            # because new user variables may be added after
-            # the initial build process
-            user_init_op = tf_compat.variables_initializer(
-                self.tensor_graph.signals.user_vars
-            )
+        # user_init_op cannot be pre-built like the others,
+        # because new user variables may be added after
+        # the initial build process
+        user_init_op = tf_compat.variables_initializer(
+            self.tensor_graph.signals.user_vars
+        )
         self.sess.run(user_init_op)
         self.soft_reset(include_params=True, include_probes=True)
 
@@ -247,8 +246,7 @@ class Simulator:
         if seed is not None:
             self.seed = seed
         self.rng = np.random.RandomState(self.seed)
-        with self.tensor_graph.graph.as_default():
-            tf_compat.set_random_seed(self.seed)
+        tf.random.set_seed(self.seed)
 
         with self.sess.as_default():
             self.tensor_graph.build_post(self.sess, self.rng)
@@ -277,12 +275,7 @@ class Simulator:
                 self._internal_state[ph][...] = val
 
         if include_params:
-            self.sess.run(
-                self.tensor_graph.variable_init_op,
-                feed_dict={
-                    ph: v for _, ph, v in self.tensor_graph.signals.base_params.values()
-                },
-            )
+            self.sess.run(self.tensor_graph.variable_init_op)
 
         if include_probes:
             for p in self.model.probes:
@@ -1082,11 +1075,10 @@ class Simulator:
         if self.closed:
             raise SimulatorClosed("Simulation has been closed, cannot save parameters")
 
-        with self.tensor_graph.graph.as_default():
-            vars = self.tensor_graph.signals.all_variables
+        vars = self.tensor_graph.signals.all_variables
 
-            with tf.device("/cpu:0"):
-                path = tf_compat.train.Saver(vars).save(self.sess, path)
+        with tf.device("/cpu:0"):
+            path = tf_compat.train.Saver(vars).save(self.sess, path)
 
         if include_internal:
             np.savez_compressed(
@@ -1120,11 +1112,10 @@ class Simulator:
         if self.closed:
             raise SimulatorClosed("Simulation has been closed, cannot load parameters")
 
-        with self.tensor_graph.graph.as_default():
-            vars = self.tensor_graph.signals.all_variables
+        vars = self.tensor_graph.signals.all_variables
 
-            with tf.device("/cpu:0"):
-                tf_compat.train.Saver(vars).restore(self.sess, path)
+        with tf.device("/cpu:0"):
+            tf_compat.train.Saver(vars).restore(self.sess, path)
 
         if include_internal:
             with np.load(path + ".internal.npz") as data:
@@ -1419,10 +1410,10 @@ class Simulator:
             outputs = [self.tensor_graph.probe_arrays[p] + 0 for p in outputs]
 
         # check gradient wrt inp
-        for node, inp in self.tensor_graph.input_ph.items():
+        for node, inp in self.tensor_graph.input_phs.items():
             inp_shape = inp.get_shape().as_list()
             inp_shape = [n_steps if x is None else x for x in inp_shape]
-            inp_tens = self.tensor_graph.input_ph[node]
+            inp_tens = self.tensor_graph.input_phs[node]
             feed[inp_tens] = np.ascontiguousarray(feed[inp_tens])
             inp_val = np.ravel(feed[inp_tens])
             for out in outputs:
@@ -1594,13 +1585,6 @@ class Simulator:
 
         # targets
         for p, t in targets.items():
-            if p not in self.tensor_graph.target_phs:
-                raise ValidationError(
-                    "%s is not a valid target; this is probably because "
-                    "it is not used in the objective function" % p,
-                    "targets",
-                )
-
             feed_dict[self.tensor_graph.target_phs[p]] = t
 
         return feed_dict
@@ -1638,7 +1622,7 @@ class Simulator:
                 # call output function to determine value
                 feed_val = np.zeros(
                     (n_steps, n.size_out, self.minibatch_size),
-                    dtype=self.tensor_graph.dtype.as_numpy_dtype,
+                    dtype=np.dtype(self.tensor_graph.dtype),
                 )
 
                 for i in range(n_steps):
@@ -1652,8 +1636,8 @@ class Simulator:
 
             # note: we still call the function (above) even if the output
             # is not being used, because it may have side-effects
-            if n in self.tensor_graph.input_ph:
-                feed_vals[self.tensor_graph.input_ph[n]] = feed_val
+            if n in self.tensor_graph.input_phs:
+                feed_vals[self.tensor_graph.input_phs[n]] = feed_val
 
         return feed_vals
 
@@ -1773,9 +1757,7 @@ class Simulator:
         return self.tensor_graph.training_step
 
     def __enter__(self):
-        self._graph_context = self.tensor_graph.graph.as_default()
-        self._device_context = self.tensor_graph.graph.device(self.tensor_graph.device)
-        self._graph_context.__enter__()
+        self._device_context = tf.device(self.tensor_graph.device)
         self._device_context.__enter__()
         self.sess.__enter__()
         return self
@@ -1783,7 +1765,6 @@ class Simulator:
     def __exit__(self, *args):
         self.sess.__exit__(*args)
         self._device_context.__exit__(*args)
-        self._graph_context.__exit__(*args)
         self.close()
 
     def __del__(self):

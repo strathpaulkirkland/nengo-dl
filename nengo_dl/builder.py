@@ -27,8 +27,6 @@ class Builder:
     ----------
     plan : list of tuple of `~nengo.builder.Operator`
         The groups of operators that will be built
-    graph : ``tf.Graph``
-        The simulation build graph
     signals : `.signals.SignalDict`
         Mapping from `~nengo.builder.Signal` to
         ``tf.Tensor`` (updated by operations)
@@ -38,9 +36,8 @@ class Builder:
 
     builders = {}
 
-    def __init__(self, plan, graph, signals, config):
+    def __init__(self, plan, signals, config):
         self.plan = plan
-        self.graph = graph
         self.signals = signals
         self.config = config
         self.op_builds = {}
@@ -139,7 +136,7 @@ class Builder:
     def name_scope(self, ops):
         """Returns a new TensorFlow name scope for the given ops."""
 
-        return self.graph.name_scope(
+        return tf.name_scope(
             utils.sanitize_name(Builder.builders[type(ops[0])].__name__)
         )
 
