@@ -95,6 +95,9 @@ class Simulator:
         self.seed = seed
         self._internal_state = None
 
+        # TODO: remove this once keras is managing the graph
+        tf_compat.reset_default_graph()
+
         # TODO: multi-GPU support
 
         if device is None and not utils.tf_gpu_installed:
@@ -158,14 +161,13 @@ class Simulator:
             )
 
         # set TensorFlow graph seed
-        with self.tensor_graph.graph.as_default():
-            tf_compat.set_random_seed(self.seed)
+        tf.random.set_seed(self.seed)
 
         # construct graph
         with ProgressBar(
             "Constructing graph", "Construction", max_value=None
         ) as progress:
-            self.tensor_graph.build(progress)
+            self.tensor_graph(self.tensor_graph.build_inputs(), progress=progress)
 
         # output simulation data for viewing via TensorBoard
         if tensorboard is not None:
@@ -181,7 +183,7 @@ class Simulator:
             )
             self.summary = tf_compat.summary.FileWriter(
                 os.path.join(tensorboard, "run_%d" % run_number),
-                graph=self.tensor_graph.graph,
+                graph=tf_compat.get_default_graph(),
             )
         else:
             self.summary = None
@@ -206,9 +208,7 @@ class Simulator:
                 x = getattr(x, a)
             setattr(x, attrs[-1], v)
 
-        self.sess = tf_compat.Session(
-            graph=self.tensor_graph.graph, config=session_config
-        )
+        self.sess = tf_compat.Session(config=session_config)
 
         self.reset(seed=seed)
 
@@ -232,13 +232,12 @@ class Simulator:
         self.time = 0.0
 
         # initialize variables and internal simulation state
-        with self.tensor_graph.graph.as_default():
-            # user_init_op cannot be pre-built like the others,
-            # because new user variables may be added after
-            # the initial build process
-            user_init_op = tf_compat.variables_initializer(
-                self.tensor_graph.signals.user_vars
-            )
+        # user_init_op cannot be pre-built like the others,
+        # because new user variables may be added after
+        # the initial build process
+        user_init_op = tf_compat.variables_initializer(
+            self.tensor_graph.signals.user_vars
+        )
         self.sess.run(user_init_op)
         self.soft_reset(include_params=True, include_probes=True)
 
@@ -247,8 +246,7 @@ class Simulator:
         if seed is not None:
             self.seed = seed
         self.rng = np.random.RandomState(self.seed)
-        with self.tensor_graph.graph.as_default():
-            tf_compat.set_random_seed(self.seed)
+        tf.random.set_seed(self.seed)
 
         with self.sess.as_default():
             self.tensor_graph.build_post(self.sess, self.rng)
@@ -268,21 +266,17 @@ class Simulator:
         """
 
         if self._internal_state is None:
-            self._internal_state = {
-                ph: val.copy()
-                for ph, val in self.tensor_graph.signals.base_tensors.values()
-            }
+            self._internal_state = [
+                val.copy() for _, val in self.tensor_graph.signals.base_tensors.values()
+            ]
         else:
-            for ph, val in self.tensor_graph.signals.base_tensors.values():
-                self._internal_state[ph][...] = val
+            for i, (_, val) in enumerate(
+                self.tensor_graph.signals.base_tensors.values()
+            ):
+                self._internal_state[i][...] = val
 
         if include_params:
-            self.sess.run(
-                self.tensor_graph.variable_init_op,
-                feed_dict={
-                    ph: v for _, ph, v in self.tensor_graph.signals.base_params.values()
-                },
-            )
+            self.sess.run(self.tensor_graph.variable_init_op)
 
         if include_probes:
             for p in self.model.probes:
@@ -967,7 +961,7 @@ class Simulator:
 
         # save the internal state of the simulator
         if isolate_state:
-            saved_state = {ph: val.copy() for ph, val in self._internal_state.items()}
+            saved_state = [val.copy() for val in self._internal_state]
 
         # set up profiling
         if profile:
@@ -1036,9 +1030,7 @@ class Simulator:
 
                 # update internal state (so next sess.run call resumes
                 # from the terminal state of this past run)
-                for base, val in state.items():
-                    ph = self.tensor_graph.signals.base_tensors[base][0]
-                    self._internal_state[ph][...] = val
+                self._internal_state = state
 
         if isolate_state:
             # restore internal state of simulator
@@ -1082,20 +1074,13 @@ class Simulator:
         if self.closed:
             raise SimulatorClosed("Simulation has been closed, cannot save parameters")
 
-        with self.tensor_graph.graph.as_default():
-            vars = self.tensor_graph.signals.all_variables
+        vars = self.tensor_graph.signals.all_variables
 
-            with tf.device("/cpu:0"):
-                path = tf_compat.train.Saver(vars).save(self.sess, path)
+        with tf.device("/cpu:0"):
+            path = tf_compat.train.Saver(vars).save(self.sess, path)
 
         if include_internal:
-            np.savez_compressed(
-                path + ".internal.npz",
-                *[
-                    self._internal_state[ph]
-                    for ph, _ in self.tensor_graph.signals.base_tensors.values()
-                ],
-            )
+            np.savez_compressed(path + ".internal.npz", *self._internal_state)
 
         logger.info("Model parameters saved to %s", path)
 
@@ -1120,20 +1105,16 @@ class Simulator:
         if self.closed:
             raise SimulatorClosed("Simulation has been closed, cannot load parameters")
 
-        with self.tensor_graph.graph.as_default():
-            vars = self.tensor_graph.signals.all_variables
+        vars = self.tensor_graph.signals.all_variables
 
-            with tf.device("/cpu:0"):
-                tf_compat.train.Saver(vars).restore(self.sess, path)
+        with tf.device("/cpu:0"):
+            tf_compat.train.Saver(vars).restore(self.sess, path)
 
         if include_internal:
             with np.load(path + ".internal.npz") as data:
-                self._internal_state = {
-                    ph: data["arr_%d" % i]
-                    for i, (ph, _) in enumerate(
-                        self.tensor_graph.signals.base_tensors.values()
-                    )
-                }
+                self._internal_state = [
+                    data["arr_%d" % i] for i in range(len(self._internal_state))
+                ]
 
         logger.info("Model parameters loaded from %s", path)
 
@@ -1419,10 +1400,10 @@ class Simulator:
             outputs = [self.tensor_graph.probe_arrays[p] + 0 for p in outputs]
 
         # check gradient wrt inp
-        for node, inp in self.tensor_graph.input_ph.items():
+        for node, inp in self.tensor_graph.input_phs.items():
             inp_shape = inp.get_shape().as_list()
             inp_shape = [n_steps if x is None else x for x in inp_shape]
-            inp_tens = self.tensor_graph.input_ph[node]
+            inp_tens = self.tensor_graph.input_phs[node]
             feed[inp_tens] = np.ascontiguousarray(feed[inp_tens])
             inp_val = np.ravel(feed[inp_tens])
             for out in outputs:
@@ -1562,19 +1543,20 @@ class Simulator:
         Returns
         -------
         feed_dict : dict of {``tf.Tensor``: `~numpy.ndarray`}
-            Feed values for placeholder tensors in the network
+            Feed values for placeholder tensors in the network. The order of this
+            dictionary will match the order of the placeholders as generated in
+            `.TensorGraph.build_inputs`.
         """
 
-        # fill in constants
-        feed_dict = {
-            self.tensor_graph.step_var: start,
-            self.tensor_graph.stop_var: start + n_steps,
-        }
-        if not self.tensor_graph.inference_only:
-            feed_dict[self.tensor_graph.signals.training] = training
+        feed_dict = collections.OrderedDict()
 
-        # fill in base tensors
-        feed_dict.update(self._internal_state)
+        # fill in constants
+        feed_dict[self.tensor_graph.step_var] = start
+        feed_dict[self.tensor_graph.stop_var] = start + n_steps
+        feed_dict[self.tensor_graph.signals.training] = training
+
+        # fill in internal state values
+        feed_dict.update(self.internal_state)
 
         # fill in input/target values
         inputs = {}
@@ -1594,13 +1576,6 @@ class Simulator:
 
         # targets
         for p, t in targets.items():
-            if p not in self.tensor_graph.target_phs:
-                raise ValidationError(
-                    "%s is not a valid target; this is probably because "
-                    "it is not used in the objective function" % p,
-                    "targets",
-                )
-
             feed_dict[self.tensor_graph.target_phs[p]] = t
 
         return feed_dict
@@ -1627,18 +1602,17 @@ class Simulator:
         feed_vals = {}
         for n, output in self.tensor_graph.input_funcs.items():
             if n in data:
-                # move minibatch dimension to the end
-                feed_val = np.moveaxis(data[n], 0, -1)
+                feed_val = data[n]
             elif isinstance(output, np.ndarray):
                 # tile to n_steps/minibatch size
                 feed_val = np.tile(
-                    output[None, :, None], (n_steps, 1, self.minibatch_size)
+                    output[None, None, :], (self.minibatch_size, n_steps, 1)
                 )
             else:
                 # call output function to determine value
                 feed_val = np.zeros(
-                    (n_steps, n.size_out, self.minibatch_size),
-                    dtype=self.tensor_graph.dtype.as_numpy_dtype,
+                    (self.minibatch_size, n_steps, n.size_out),
+                    dtype=np.dtype(self.tensor_graph.dtype),
                 )
 
                 for i in range(n_steps):
@@ -1646,14 +1620,14 @@ class Simulator:
                     # may mutate its outputs in-place on subsequent calls.
                     # this assignment will broadcast the output along the
                     # minibatch dimension if required.
-                    feed_val[i] = np.transpose(
-                        [func((i + self.n_steps + 1) * self.dt) for func in output]
-                    )
+                    feed_val[:, i] = [
+                        func((i + self.n_steps + 1) * self.dt) for func in output
+                    ]
 
             # note: we still call the function (above) even if the output
             # is not being used, because it may have side-effects
-            if n in self.tensor_graph.input_ph:
-                feed_vals[self.tensor_graph.input_ph[n]] = feed_val
+            if n in self.tensor_graph.input_phs:
+                feed_vals[self.tensor_graph.input_phs[n]] = feed_val
 
         return feed_vals
 
@@ -1772,10 +1746,19 @@ class Simulator:
         """The number of training iterations that have been executed."""
         return self.tensor_graph.training_step
 
+    @property
+    def internal_state(self):
+        """Current internal state values for the simulation."""
+        return collections.OrderedDict(
+            (ph, s)
+            for ph, s in zip(
+                (ph for ph, _ in self.tensor_graph.signals.base_tensors.values()),
+                self._internal_state,
+            )
+        )
+
     def __enter__(self):
-        self._graph_context = self.tensor_graph.graph.as_default()
-        self._device_context = self.tensor_graph.graph.device(self.tensor_graph.device)
-        self._graph_context.__enter__()
+        self._device_context = tf.device(self.tensor_graph.device)
         self._device_context.__enter__()
         self.sess.__enter__()
         return self
@@ -1783,7 +1766,6 @@ class Simulator:
     def __exit__(self, *args):
         self.sess.__exit__(*args)
         self._device_context.__exit__(*args)
-        self._graph_context.__exit__(*args)
         self.close()
 
     def __del__(self):
@@ -1973,7 +1955,7 @@ class SimulationData(collections.Mapping):
                 params.append(placeholder)
 
         # get the live parameter values
-        fetched = self.sim.sess.run(fetches, feed_dict=self.sim._internal_state)
+        fetched = self.sim.sess.run(fetches, feed_dict=self.sim.internal_state)
 
         # final updating of parameters
         for i, sig in enumerate(sigs):

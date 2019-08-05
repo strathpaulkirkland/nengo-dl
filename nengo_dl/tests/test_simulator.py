@@ -494,7 +494,7 @@ def test_generate_inputs(Simulator, seed):
     with Simulator(net, minibatch_size=2, unroll_simulation=3) as sim:
         feed = sim._generate_inputs({inp[0]: np.zeros((2, 3, 1))}, 3)
 
-        ph = [sim.tensor_graph.input_ph[x] for x in inp]
+        ph = [sim.tensor_graph.input_phs[x] for x in inp]
 
         assert len(sim.tensor_graph.invariant_inputs) == len(inp)
         assert len(feed) == len(inp)
@@ -503,17 +503,17 @@ def test_generate_inputs(Simulator, seed):
         sim.run_steps(3, data={inp[0]: np.zeros((2, 3, 1))})
 
         vals = [
-            np.zeros((3, 1, 2)),
-            np.tile(np.sin(sim.trange())[:, None, None], (1, 1, 2)),
-            np.tile(proc.run_steps(3)[:, :, None], (1, 1, 2)),
-            np.ones((3, 1, 2)) * 2,
+            np.zeros((2, 3, 1)),
+            np.tile(np.sin(sim.trange())[None, :, None], (2, 1, 1)),
+            np.tile(proc.run_steps(3)[None, :, :], (2, 1, 1)),
+            np.ones((2, 3, 1)) * 2,
         ]
         for i, x in enumerate(vals):
             assert np.allclose(feed[ph[i]], x)
-            assert np.allclose(sim.data[p[i]], x.transpose(2, 0, 1))
+            assert np.allclose(sim.data[p[i]], x)
 
         # check that unseeded process was different in each minibatch item
-        assert not np.allclose(feed[ph[-1]][..., 0], feed[ph[-1]][..., 1])
+        assert not np.allclose(feed[ph[-1]][0], feed[ph[-1]][1])
 
 
 @pytest.mark.training
@@ -530,15 +530,15 @@ def test_save_load_params(Simulator, tmpdir):
 
     with Simulator(net) as sim:
         weights_var = [
-            x[0]
+            x
             for x in sim.tensor_graph.signals.base_params.values()
-            if x[0].get_shape() == (1, 10)
+            if x.get_shape() == (1, 10)
         ][0]
         enc_var = sim.tensor_graph.signals.base_tensors[
             sim.tensor_graph.signals[sim.model.sig[ens]["encoders"]].key
         ][0]
         weights0, enc0 = sim.sess.run(
-            [weights_var, enc_var], feed_dict=sim._internal_state
+            [weights_var, enc_var], feed_dict=sim.internal_state
         )
         sim.save_params(os.path.join(str(tmpdir), "train"))
         sim.save_params(os.path.join(str(tmpdir), "local"), include_internal=True)
@@ -560,15 +560,15 @@ def test_save_load_params(Simulator, tmpdir):
 
     with Simulator(net2) as sim:
         weights_var = [
-            x[0]
+            x
             for x in sim.tensor_graph.signals.base_params.values()
-            if x[0].get_shape() == (1, 10)
+            if x.get_shape() == (1, 10)
         ][0]
         enc_var = sim.tensor_graph.signals.base_tensors[
             sim.tensor_graph.signals[sim.model.sig[ens]["encoders"]].key
         ][0]
         weights1, enc1 = sim.sess.run(
-            [weights_var, enc_var], feed_dict=sim._internal_state
+            [weights_var, enc_var], feed_dict=sim.internal_state
         )
         assert not np.allclose(weights0, weights1)
         assert not np.allclose(enc0, enc1)
@@ -576,7 +576,7 @@ def test_save_load_params(Simulator, tmpdir):
         sim.load_params(os.path.join(str(tmpdir), "train"))
 
         weights2, enc2 = sim.sess.run(
-            [weights_var, enc_var], feed_dict=sim._internal_state
+            [weights_var, enc_var], feed_dict=sim.internal_state
         )
         assert np.allclose(weights0, weights2)
         assert not np.allclose(enc0, enc2)
@@ -584,7 +584,7 @@ def test_save_load_params(Simulator, tmpdir):
         sim.load_params(os.path.join(str(tmpdir), "local"), include_internal=True)
 
         weights3, enc3 = sim.sess.run(
-            [weights_var, enc_var], feed_dict=sim._internal_state
+            [weights_var, enc_var], feed_dict=sim.internal_state
         )
         assert np.allclose(weights0, weights3)
         assert np.allclose(enc0, enc3)
@@ -1100,9 +1100,12 @@ def test_simulation_data(Simulator, seed):
         tensor_sig = sim.tensor_graph.signals[sig]
         if sim.tensor_graph.inference_only:
             base = sim.tensor_graph.signals.base_tensors[tensor_sig.key][0]
-            sim._internal_state[base][...] = 1
+            idx = list(
+                ph for ph, _ in sim.tensor_graph.signals.base_tensors.values()
+            ).index(base)
+            sim._internal_state[idx][...] = 1
         else:
-            base = sim.tensor_graph.signals.base_params[tensor_sig.key][0]
+            base = sim.tensor_graph.signals.base_params[tensor_sig.key]
             op = tf_compat.assign(base, tf.ones_like(base))
             sim.sess.run(op)
 
@@ -1479,7 +1482,6 @@ def test_fill_feed(Simulator):
     with nengo.Network() as net:
         a = nengo.Node([0])
         p0 = nengo.Probe(a)
-        p1 = nengo.Probe(a)
 
     with Simulator(net) as sim:
         # build an objective with p0 in it, so that it will be added to the
@@ -1488,10 +1490,6 @@ def test_fill_feed(Simulator):
 
         # filling p0 will work fine
         sim._fill_feed(1, data={p0: np.zeros((1, 1, 1))})
-
-        # validation error if filling p1
-        with pytest.raises(ValidationError):
-            sim._fill_feed(1, data={p1: np.zeros((1, 1, 1))})
 
 
 @pytest.mark.parametrize("neuron_type", (nengo.SpikingRectifiedLinear(), nengo.LIF()))

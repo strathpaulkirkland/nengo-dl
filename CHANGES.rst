@@ -32,6 +32,7 @@ Release History
   The input to the ``pre_build`` function will be the shapes of the inputs to
   the main function, mirroring the structure of those arguments.
 - Keras ``Layer`` classes can now be used with ``nengo_dl.tensor_layer``.
+- ``TensorGraph`` can now be used as a Keras ``Layer``.
 
 **Changed**
 
@@ -54,6 +55,15 @@ Release History
 - ``Simulator.save_params`` now saves internal state as a separate
   ``<filepath>.internal.npz`` file (if ``include_internal=True``), rather than
   including it in the TensorFlow checkpoint file.
+- ``TensorGraph.dtype`` is now a string, e.g. ``"float32"`` instead of ``tf.float32``.
+- Input placeholders now have the minibatch dimension as the first axis rather than
+  last (this doesn't affect the user-facing interface when calling things through e.g.
+  ``Simulator.run``, which was already minibatch-first).
+- NengoDL will now use the default TensorFlow graph for all graph construction (but it
+  also resets the default graph whenever a Simulator is initialized, so in most cases
+  the effect will be the same as the previous isolated graph).
+- Target placeholders are now created for all Probes in the network (not just those
+  targeted by loss functions).
 
 2.2.1 (unreleased)
 ==================
