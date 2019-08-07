@@ -22,6 +22,13 @@ Release History
 2.2.1 (unreleased)
 ==================
 
+**Changed**
+
+- Increased minimum TensorFlow version to 1.14.0.
+- NengoDL now specifies ``tensorflow-gpu`` as a requirement in all cases. As of
+  TensorFlow 1.14 the ``-gpu`` package can be used whether or not CUDA support is
+  available (if not, things will simply run on the CPU).
+
 **Fixed**
 
 - Fixed ``tensorflow-gpu`` installation check in pep517-style isolated build

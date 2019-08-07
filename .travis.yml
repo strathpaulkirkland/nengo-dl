@@ -19,7 +19,7 @@ env:
     - COV_CORE_DATAFILE=.coverage.eager
     - BRANCH_NAME="${TRAVIS_PULL_REQUEST_BRANCH:-$TRAVIS_BRANCH}"
     - NUMPY_VERSION="numpy"
-    - TF_VERSION="tensorflow"
+    - TF_VERSION="tensorflow-gpu"
     - NENGO_VERSION="nengo"
     - SCIPY_VERSION="noop"
 
@@ -40,13 +40,11 @@ jobs:
   -
     env:
       NENGO_VERSION="git+https://github.com/nengo/nengo.git"
-      TF_VERSION="tensorflow-gpu"
       SCRIPT="gpu"
       TEST_ARGS="--device /gpu:3 --performance"
   -
     env:
       NENGO_VERSION="git+https://github.com/nengo/nengo.git#egg=nengo"
-      TF_VERSION="tensorflow"
       SCIPY_VERSION="scipy"
       SCRIPT="test-coverage"
     dist: xenial
@@ -54,7 +52,7 @@ jobs:
   -
     env:
       NENGO_VERSION="nengo==2.8.0"
-      TF_VERSION="tensorflow==1.4.0"
+      TF_VERSION="tensorflow-gpu==1.14.0"
       NUMPY_VERSION="numpy==1.14.5"
       SCRIPT="test-coverage"
     python: 3.5
@@ -79,7 +77,7 @@ jobs:
         server: https://test.pypi.org/legacy/
         user: drasmuss
         password: $PYPI_TOKEN
-        distributions: "sdist "
+        distributions: "sdist bdist_wheel "
         on:
           all_branches: true
           condition: $TRAVIS_BRANCH =~ ^release-candidate-*
@@ -87,7 +85,7 @@ jobs:
       - provider: pypi
         user: drasmuss
         password: $PYPI_TOKEN
-        distributions: "sdist "
+        distributions: "sdist bdist_wheel "
         on:
           all_branches: true
           condition: $TRAVIS_TAG =~ ^v[0-9]*

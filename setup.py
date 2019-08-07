@@ -29,43 +29,10 @@ def read(*filenames, **kwargs):
 root = os.path.dirname(os.path.realpath(__file__))
 version = runpy.run_path(os.path.join(root, "nengo_dl", "version.py"))["version"]
 
-import pkg_resources
-import sys
-
-# determine which tensorflow package to require
-if "bdist_wheel" in sys.argv:
-    # when building wheels we have to pick a requirement ahead of time (can't
-    # check it at install time). so we'll go with tensorflow (non-gpu), since
-    # that is the safest option
-    tf_req = "tensorflow"
-else:
-    # check if one of the tensorflow packages is already installed (so that we
-    # don't force tensorflow to be installed if e.g. tensorflow-gpu is already
-    # there).
-    # as of pep517 and pip>=10.0, pip will be running this file inside an isolated
-    # environment, so we can't just look up the tensorflow version in the current
-    # environment. but the pip package will be in the isolated sys.path, so we can use
-    # that to look up the site-packages directory of the original environment.
-    target_path = os.path.join("site-packages", "pip")
-    for path in sys.path:
-        if target_path in path:
-            source_path = [path[: path.index("pip")]]
-            break
-    else:
-        # fallback if we're not in an isolated environment (i.e. pip<10.0)
-        source_path = sys.path
-    installed_dists = [d.project_name for d in pkg_resources.WorkingSet(source_path)]
-    for d in ["tf-nightly-gpu", "tf-nightly", "tensorflow-gpu"]:
-        if d in installed_dists:
-            tf_req = d
-            break
-    else:
-        tf_req = "tensorflow"
-
 install_req = [
     "nengo>=2.8.0",
     "numpy>=1.14.5",
-    "%s>=1.4.0" % tf_req,
+    "tensorflow-gpu>=1.14.0",
     "progressbar2>=3.39.0",
 ]
 docs_req = [

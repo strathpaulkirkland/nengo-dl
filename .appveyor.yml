@@ -4,15 +4,15 @@ environment:
   MODE: test
   PYTHON_VERSION: C:\Miniconda36-x64
   NUMPY_VERSION: numpy
-  TF_VERSION: tensorflow
+  TF_VERSION: tensorflow-gpu
   NENGO_VERSION: nengo
 
   matrix:
     - MODE: test # default build
     - NENGO_VERSION: git+https://github.com/nengo/nengo.git
-      TF_VERSION: tensorflow --pre
+      TF_VERSION: tensorflow-gpu --pre
     - NENGO_VERSION: nengo==2.8.0
-      TF_VERSION: tensorflow==1.4.0
+      TF_VERSION: tensorflow-gpu==1.14.0
       NUMPY_VERSION: numpy==1.14.5
       PYTHON_VERSION: C:\Miniconda35-x64
 
