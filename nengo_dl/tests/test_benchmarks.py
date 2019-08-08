@@ -158,8 +158,8 @@ def test_cli():
     [
         (benchmarks.cconv(128, 64, nengo.RectifiedLinear()), False, 64, 0.7, 0.85),
         (benchmarks.cconv(128, 64, nengo.LIF()), False, 64, 1.6, 1.8),
-        (benchmarks.integrator(128, 32, nengo.RectifiedLinear()), True, 64, 1.7, 2.1),
-        (benchmarks.integrator(128, 32, nengo.LIF()), True, 64, 2.5, 3.0),
+        (benchmarks.integrator(128, 32, nengo.RectifiedLinear()), True, 64, 0.8, 1.0),
+        (benchmarks.integrator(128, 32, nengo.LIF()), True, 64, 1.1, 1.4),
         (
             benchmarks.random_network(
                 64,
