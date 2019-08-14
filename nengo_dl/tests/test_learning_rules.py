@@ -39,13 +39,13 @@ def test_merged_learning(Simulator, rule, weights, seed):
         conn0 = nengo.Connection(
             a,
             c,
-            learning_rule_type=rule(),
+            learning_rule_type=rule(learning_rate=0.1),
             solver=nengo.solvers.LstsqL2(weights=weights),
         )
         conn1 = nengo.Connection(
             b,
             d,
-            learning_rule_type=rule(),
+            learning_rule_type=rule(learning_rate=0.2),
             solver=nengo.solvers.LstsqL2(weights=weights),
         )
 
@@ -57,7 +57,7 @@ def test_merged_learning(Simulator, rule, weights, seed):
 
         canonical = (sim.data[p0], sim.data[p1])
 
-    with Simulator(net) as sim:
+    with Simulator(net, minibatch_size=2) as sim:
         build_type = {
             nengo.Voja: SimVoja,
             nengo.Oja: SimOja,
@@ -72,5 +72,6 @@ def test_merged_learning(Simulator, rule, weights, seed):
 
         sim.run_steps(10)
 
-        assert np.allclose(sim.data[p0], canonical[0])
-        assert np.allclose(sim.data[p1], canonical[1])
+        for i in range(sim.minibatch_size):
+            assert np.allclose(sim.data[p0][i], canonical[0])
+            assert np.allclose(sim.data[p1][i], canonical[1])

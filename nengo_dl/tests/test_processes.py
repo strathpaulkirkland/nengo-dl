@@ -155,11 +155,12 @@ def test_linearfilter_onex(Simulator):
     ),
 )
 def test_linearfilter_minibatched(Simulator, synapse):
-    run_time = 0.1
+    n_steps = 10
     mini_size = 4
+    signal_d = 3
 
     with nengo.Network() as net:
-        inp = nengo.Node([0])
+        inp = nengo.Node(np.zeros(signal_d))
 
         p0 = nengo.Probe(inp, synapse=synapse)
         p1 = nengo.Probe(inp, synapse=synapse)
@@ -176,11 +177,17 @@ def test_linearfilter_minibatched(Simulator, synapse):
             == 1
         )
 
-        data = np.zeros((mini_size, 100, 1)) + np.arange(mini_size)[:, None, None]
-        sim.run(run_time, data={inp: data})
+        data = (
+            np.zeros((mini_size, n_steps, signal_d))
+            + np.arange(mini_size)[:, None, None]
+        )
+        sim.run_steps(n_steps, data={inp: data})
 
     for i in range(mini_size):
-        filt = synapse.filt(np.ones((100, 1)) * i, y0=0)
+        filt = synapse.filt(np.ones((n_steps, signal_d)) * i, y0=0)
 
         assert np.allclose(sim.data[p0][i, 1:], filt[:-1])
         assert np.allclose(sim.data[p1][i, 1:], filt[:-1])
+
+
+# TODO: test applying filter to non-minibatched signal (e.g. weight probe)
