@@ -458,11 +458,11 @@ def test_create_signals():
     plan = [tuple(dummies.Op(reads=[x]) for x in sigs)]
     graph = dummies.TensorGraph(plan, tf.float32, 10)
     graph.create_signals(sigs)
-    assert graph.base_arrays_init[False][graph.signals[sigs[0]].key].shape == (15, 10)
+    assert graph.base_arrays_init[False][graph.signals[sigs[0]].key].shape == (10, 15)
     assert graph.base_arrays_init[False][graph.signals[sigs[2]].key].shape == (
+        10,
         15,
         1,
-        10,
     )
     assert graph.signals[sigs[0]].key == graph.signals[sigs[1]].key
     assert graph.signals[sigs[1]].key != graph.signals[sigs[2]].key
@@ -479,7 +479,7 @@ def test_create_signals():
     graph = dummies.TensorGraph(plan, tf.float32, 10)
     graph.create_signals(sigs)
     assert graph.base_arrays_init[True][graph.signals[sigs[0]].key].shape == (2,)
-    assert graph.base_arrays_init[False][graph.signals[sigs[2]].key].shape == (2, 10)
+    assert graph.base_arrays_init[False][graph.signals[sigs[2]].key].shape == (10, 2)
     assert graph.signals[sigs[0]].key == graph.signals[sigs[1]].key
     assert graph.signals[sigs[1]].key != graph.signals[sigs[2]].key
     assert graph.signals[sigs[2]].key == graph.signals[sigs[3]].key
@@ -489,7 +489,7 @@ def test_create_signals():
     plan = [tuple(dummies.Op(reads=[x]) for x in sigs)]
     graph = dummies.TensorGraph(plan, tf.float32, 10)
     graph.create_signals(sigs)
-    assert list(graph.base_arrays_init[False].values())[0].shape == (5, 10)
+    assert list(graph.base_arrays_init[False].values())[0].shape == (10, 5)
 
     # check that boolean signals are handled correctly
     sigs = [dummies.Signal(dtype=np.bool, shape=())]
@@ -508,7 +508,7 @@ def test_create_signals_views():
     plan = [tuple(dummies.Op(reads=[x]) for x in sigs)]
     graph = dummies.TensorGraph(plan, tf.float32, 10)
     graph.create_signals(sigs[2:])
-    assert list(graph.base_arrays_init[False].values())[0].shape == (8, 10)
+    assert list(graph.base_arrays_init[False].values())[0].shape == (10, 8)
     assert graph.signals[sigs[0]].key == graph.signals[sigs[1]].key
     assert graph.signals[sigs[1]].key == graph.signals[sigs[2]].key
     assert graph.signals[sigs[2]].key == graph.signals[sigs[3]].key

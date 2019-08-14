@@ -1963,12 +1963,9 @@ class SimulationData(collections.Mapping):
             if type(params[i]) == object:
                 params[i] = fetched[params[i]]
 
-            # handle minibatch dimension
-            if sig.minibatched:
-                if not self.minibatched:
-                    params[i] = params[i][..., 0]
-                else:
-                    params[i] = np.moveaxis(params[i], -1, 0)
+            if sig.minibatched and not self.minibatched:
+                # drop minibatch dimension
+                params[i] = params[i][0]
 
         return params
 
