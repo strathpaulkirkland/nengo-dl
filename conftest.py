@@ -1,6 +1,4 @@
 from distutils.version import LooseVersion
-import hashlib
-import os
 import shlex
 
 import nengo.conftest
@@ -9,7 +7,6 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-import nengo_dl
 from nengo_dl import config, simulator, utils
 from nengo_dl.compat import tf_compat
 
@@ -91,49 +88,6 @@ def pytest_addoption(parser):
         )
 
 
-def function_seed(function, mod=0):
-    """
-    Generates a unique seed for the given test function.
-
-    The seed should be the same across all machines/platforms.
-    """
-    c = function.__code__
-
-    # get function file path relative to Nengo directory root
-    nengo_path = os.path.abspath(os.path.dirname(nengo_dl.__file__))
-    path = os.path.relpath(c.co_filename, start=nengo_path)
-
-    # take start of md5 hash of function file and name, should be unique
-    hash_list = os.path.normpath(path).split(os.path.sep) + [c.co_name]
-    hash_string = ("/".join(hash_list)).encode("utf-8")
-    i = int(hashlib.md5(hash_string).hexdigest()[:15], 16)
-    s = (i + mod) % np.iinfo(np.int32).max
-    return s
-
-
-@pytest.fixture
-def rng(request):
-    """
-    A seeded random number generator.
-
-    This should be used in lieu of np.random because we control its seed.
-    """
-    # add 1 to seed to be different from `seed` fixture
-    seed = function_seed(request.function, mod=1)
-    return np.random.RandomState(seed)
-
-
-@pytest.fixture
-def seed(request):
-    """
-    A number for seeding random number generators.
-
-    This should be used in lieu of a fixed number so that we can ensure that
-    tests are not dependent on specific seeds.
-    """
-    return function_seed(request.function)
-
-
 @pytest.fixture(scope="session")
 def Simulator(request):
     """
@@ -141,7 +95,7 @@ def Simulator(request):
     ``nengo_dl.Simulator``).
     """
 
-    dtype = getattr(tf, request.config.getoption("--dtype"))
+    dtype = tf.as_dtype(request.config.getoption("--dtype"))
     unroll = request.config.getoption("--unroll-simulation")
     device = request.config.getoption("--device")
     inference_only = request.config.getoption("--inference-only")
@@ -177,17 +131,19 @@ def patch_nengo_tests():
     work correctly when running those tests through NengoDL.
     """
 
-    # replace nengo Simulator fixture
+    # monkey patch the nengo Simulator fixture, so that we can also use the pytest
+    # arguments to control nengo tests
     nengo.conftest.Simulator = Simulator
 
-    # set looser tolerances on synapse tests
-    def allclose(*args, **kwargs):
-        kwargs.setdefault("atol", 5e-7)
-        return nengo.utils.testing.allclose(*args, **kwargs)
-
-    test_synapses.allclose = allclose
-
     if LooseVersion(nengo.__version__) < "3.0.0":
+        # set looser tolerances on synapse tests (since allclose fixture doesn't work
+        # in these versions)
+        def allclose(*args, **kwargs):
+            kwargs.setdefault("atol", 5e-5)
+            return nengo.utils.testing.allclose(*args, **kwargs)
+
+        test_synapses.allclose = allclose
+
         # cast output of run_synapse to float64. this is necessary because
         # Synapse.filt bases its internal dtypes on the dtype of its inputs, and
         # we don't want to downcast everything there to float32.

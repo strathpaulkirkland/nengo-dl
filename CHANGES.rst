@@ -26,6 +26,7 @@ Release History
 
 - Fixed ``tensorflow-gpu`` installation check in pep517-style isolated build
   environments.
+- Switch to using ``pytest-rng`` and ``pytest-allclose`` fixtures in tests.
 
 2.2.0 (July 24, 2019)
 =====================
