@@ -7,8 +7,9 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-from nengo_dl import config, simulator, utils
+from nengo_dl import simulator, utils
 from nengo_dl.compat import tf_compat
+from nengo_dl.tests import make_test_sim
 
 
 def pytest_configure(config):
@@ -80,41 +81,29 @@ def pytest_addoption(parser):
     )
 
     if nengo.version.version_info <= (2, 8, 0):
-        # add the pytest option from future nengo versions
+        # add the pytest options from future nengo versions
         parser.addini(
             "nengo_test_unsupported",
             type="linelist",
-            help="List of unsupported unit tests with reason for " "exclusion",
+            help="List of unsupported unit tests with reason for exclusion",
+        )
+
+        parser.addoption(
+            "--simloader",
+            nargs=1,
+            type=str,
+            default=None,
+            help="Specify a function that returns the simulator class to test.",
         )
 
 
 @pytest.fixture(scope="session")
 def Simulator(request):
     """
-    Simulator class to be used in tests (use this instead of
-    ``nengo_dl.Simulator``).
+    Simulator class to be used in tests (use this instead of ``nengo_dl.Simulator``).
     """
 
-    dtype = tf.as_dtype(request.config.getoption("--dtype"))
-    unroll = request.config.getoption("--unroll-simulation")
-    device = request.config.getoption("--device")
-    inference_only = request.config.getoption("--inference-only")
-
-    def TestSimulator(net, *args, **kwargs):
-        kwargs.setdefault("unroll_simulation", unroll)
-        kwargs.setdefault("device", device)
-
-        if net is not None and config.get_setting(net, "inference_only") is None:
-            with net:
-                config.configure_settings(inference_only=inference_only)
-
-        if net is not None and config.get_setting(net, "dtype") is None:
-            with net:
-                config.configure_settings(dtype=dtype)
-
-        return simulator.Simulator(net, *args, **kwargs)
-
-    return TestSimulator
+    return make_test_sim(request)
 
 
 @pytest.fixture(scope="function")
@@ -131,11 +120,11 @@ def patch_nengo_tests():
     work correctly when running those tests through NengoDL.
     """
 
-    # monkey patch the nengo Simulator fixture, so that we can also use the pytest
-    # arguments to control nengo tests
-    nengo.conftest.Simulator = Simulator
-
     if LooseVersion(nengo.__version__) < "3.0.0":
+        # monkey patch the nengo Simulator fixture, so that we can also use the pytest
+        # arguments to control nengo tests
+        nengo.conftest.Simulator = Simulator
+
         # set looser tolerances on synapse tests (since allclose fixture doesn't work
         # in these versions)
         def allclose(*args, **kwargs):
