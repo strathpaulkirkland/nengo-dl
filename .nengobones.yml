@@ -23,8 +23,8 @@ setup_cfg:
   pytest:
     addopts:
       - -p nengo.tests.options
-      - --simulator nengo_dl.Simulator
-      - --ref-simulator nengo_dl.Simulator
+      - --simloader nengo_dl.tests.make_test_sim
+      - --simulator nengo_dl.Simulator  # for nengo<3.0
       - --disable-warnings
     filterwarnings:
       - always
