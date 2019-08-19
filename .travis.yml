@@ -39,13 +39,13 @@ jobs:
     cache: False
   -
     env:
-      NENGO_VERSION="git+https://github.com/nengo/nengo.git"
+      NENGO_VERSION="git+https://github.com/nengo/nengo.git@pytest-plt-rng#egg=nengo"
       TF_VERSION="tensorflow-gpu"
       SCRIPT="gpu"
       TEST_ARGS="--device /gpu:3 --performance"
   -
     env:
-      NENGO_VERSION="git+https://github.com/nengo/nengo.git#egg=nengo"
+      NENGO_VERSION="git+https://github.com/nengo/nengo.git@pytest-plt-rng#egg=nengo"
       TF_VERSION="tensorflow"
       SCIPY_VERSION="scipy"
       SCRIPT="test-coverage"

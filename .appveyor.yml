@@ -9,7 +9,7 @@ environment:
 
   matrix:
     - MODE: test # default build
-    - NENGO_VERSION: git+https://github.com/nengo/nengo.git
+    - NENGO_VERSION: git+https://github.com/nengo/nengo.git@pytest-plt-rng#egg=nengo
       TF_VERSION: tensorflow --pre
     - NENGO_VERSION: nengo==2.8.0
       TF_VERSION: tensorflow==1.4.0
