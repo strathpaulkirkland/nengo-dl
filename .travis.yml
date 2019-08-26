@@ -36,6 +36,8 @@ jobs:
         packages:
           - pandoc
   -
+    env:
+      TEST_ARGS="-p nengo.tests.options --simulator nengo_dl.Simulator"
     cache: False
   -
     env:
@@ -57,16 +59,17 @@ jobs:
       TF_VERSION="tensorflow==1.4.0"
       NUMPY_VERSION="numpy==1.14.5"
       SCRIPT="test-coverage"
+      TEST_ARGS="-p nengo.tests.options --simulator nengo_dl.Simulator"
     python: 3.5
   -
     env:
-      TEST_ARGS="--dtype float64 --simulator-only"
+      TEST_ARGS="--dtype float64 --simulator-only -p nengo.tests.options --simulator nengo_dl.Simulator"
   -
     env:
-      TEST_ARGS="--unroll-simulation 5 --simulator-only"
+      TEST_ARGS="--unroll-simulation 5 --simulator-only -p nengo.tests.options --simulator nengo_dl.Simulator"
   -
     env:
-      TEST_ARGS="--inference-only --simulator-only"
+      TEST_ARGS="--inference-only --simulator-only -p nengo.tests.options --simulator nengo_dl.Simulator"
   -
     env:
       SCRIPT="examples"

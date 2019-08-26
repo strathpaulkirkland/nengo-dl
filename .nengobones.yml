@@ -22,13 +22,11 @@ manifest_in:
 setup_cfg:
   pytest:
     addopts:
-      - -p nengo.tests.options
-      - --simloader nengo_dl.tests.make_test_sim
-      - --simulator nengo_dl.Simulator  # for nengo<3.0
       - --disable-warnings
     filterwarnings:
       - always
     xfail_strict: True
+    nengo_simloader: nengo_dl.tests.make_test_sim
     nengo_test_unsupported:
       nengo/tests/test_simulator.py:test_warn_on_opensim_del:
         nengo_dl raises a different (more visible) warning, see
@@ -127,6 +125,7 @@ travis_yml:
     - script: static
     - script: docs
     - cache: false
+      test_args: -p nengo.tests.options --simulator nengo_dl.Simulator
     - script: gpu
       test_args: --device /gpu:3 --performance
       env:
@@ -144,10 +143,11 @@ travis_yml:
         NENGO_VERSION: nengo[tests]==2.8.0
         TF_VERSION: tensorflow==1.4.0
         NUMPY_VERSION: numpy==1.14.5
+      test_args: -p nengo.tests.options --simulator nengo_dl.Simulator
       python: 3.5
-    - test_args: --dtype float64 --simulator-only
-    - test_args: --unroll-simulation 5 --simulator-only
-    - test_args: --inference-only --simulator-only
+    - test_args: --dtype float64 --simulator-only -p nengo.tests.options --simulator nengo_dl.Simulator
+    - test_args: --unroll-simulation 5 --simulator-only -p nengo.tests.options --simulator nengo_dl.Simulator
+    - test_args: --inference-only --simulator-only -p nengo.tests.options --simulator nengo_dl.Simulator
     - script: examples
   pypi_user: drasmuss
   deploy_dists:

@@ -1,7 +1,7 @@
 from distutils.version import LooseVersion
 import shlex
 
-import nengo.conftest
+import nengo
 from nengo.tests import test_synapses, test_learning_rules
 import numpy as np
 import pytest
@@ -121,9 +121,11 @@ def patch_nengo_tests():
     """
 
     if LooseVersion(nengo.__version__) < "3.0.0":
+        from nengo import conftest
+
         # monkey patch the nengo Simulator fixture, so that we can also use the pytest
         # arguments to control nengo tests
-        nengo.conftest.Simulator = Simulator
+        conftest.Simulator = Simulator
 
         # set looser tolerances on synapse tests (since allclose fixture doesn't work
         # in these versions)
