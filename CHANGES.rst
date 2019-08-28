@@ -22,6 +22,11 @@ Release History
 2.2.1 (unreleased)
 ==================
 
+**Changed**
+
+- Disable TensorFlow 2.0 behaviour (e.g. control flow v2) by default.  This will be
+  re-enabled when full TensorFlow 2.0 support is added.
+
 **Fixed**
 
 - Fixed ``tensorflow-gpu`` installation check in pep517-style isolated build
