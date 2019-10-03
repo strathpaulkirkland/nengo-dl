@@ -195,4 +195,5 @@ def test_performance(net, train, minibatch_size, min, max):
         do_profile=False,
         reps=5,
     )
-    assert min < time < max
+    assert time > min
+    assert time < max
