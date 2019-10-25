@@ -5,11 +5,16 @@
 
 {% block install %}
     pip install coverage  # needed for the uploading in after_script
-    # decrypt private key, see https://docs.travis-ci.com/user/encrypting-files/
-    exe openssl aes-256-cbc -K "${encrypted_fcdbeb54a1c4_key:?}" -iv "${encrypted_fcdbeb54a1c4_iv:?}" -in .ci/travis_rsa.enc -out ~/.ssh/id_rsa -d
+    exe openssl aes-256-cbc \
+        -K "${encrypted_fcdbeb54a1c4_key:?}" \
+        -iv "${encrypted_fcdbeb54a1c4_iv:?}" \
+        -in .ci/secret.tar.enc \
+        -out .ci/secret.tar \
+        -d
+    exe mkdir -p ~/.ssh
+    exe tar xvf .ci/secret.tar -C ~/.ssh --overwrite
     exe chmod 600 ~/.ssh/id_rsa
-    echo -e "$ABRGPU_INFO" >> ~/.ssh/config  # ssh config, stored in travis-ci settings
-    ssh -o StrictHostKeyChecking=no abrgpu "echo 'Connected to abrgpu'"
+    ssh abrgpu -q "echo 'Connected to abrgpu'"
     exe scp -r "$(pwd)" "abrgpu:/tmp/nengo-dl-$TRAVIS_JOB_NUMBER"
 {% endblock %}
 
