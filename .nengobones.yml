@@ -138,7 +138,7 @@ travis_yml:
       test_args: --device /gpu:3 --performance
       env:
         NENGO_VERSION: git+https://github.com/nengo/nengo.git#egg=nengo[tests]
-        TF_VERSION: tensorflow-gpu
+        TF_VERSION: tensorflow-gpu<2.0.0
     - script: test-coverage
       env:
         NENGO_VERSION: git+https://github.com/nengo/nengo.git#egg=nengo[tests]
