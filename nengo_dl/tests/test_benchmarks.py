@@ -6,7 +6,7 @@ import sys
 import pytest
 import nengo
 
-from nengo_dl import benchmarks, SoftLIFRate
+from nengo_dl import benchmarks, configure_settings, SoftLIFRate
 
 
 @pytest.mark.parametrize(
@@ -204,6 +204,9 @@ def test_performance(net, train, minibatch_size, use_loop, min, max):
     # TensorFlow GPU version: 2.0.0
     # Nengo version: 2.8.0
     # NengoDL version: 3.0.0
+
+    with net:
+        configure_settings(use_loop=use_loop)
 
     time = benchmarks.run_profile(
         net,
