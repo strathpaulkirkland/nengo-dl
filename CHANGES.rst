@@ -48,6 +48,7 @@ Release history
   (see `#1591`_). Note that this may change the number of trainable parameters in a
   network (the scalar default ``transform=1`` weights on non-Ensemble connections will
   no longer be present). (`#128`_)
+- Re-enabled the ``remove_constant_copies`` graph simplification by default. (`#129`_)
 
 **Fixed**
 
@@ -64,6 +65,7 @@ Release history
 .. _#1591: https://github.com/nengo/nengo/pull/1591
 .. _#128: https://github.com/nengo/nengo-dl/pull/128
 .. _#126: https://github.com/nengo/nengo-dl/pull/126
+.. _#129: https://github.com/nengo/nengo-dl/pull/129
 
 3.0.0 (December 17, 2019)
 -------------------------
