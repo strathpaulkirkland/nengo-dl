@@ -436,7 +436,7 @@ class LayerConverter:
                 if biases is not None:
                     # use a connection from a constant node (so that the bias
                     # values will be trainable)
-                    bias_node = nengo.Node([1], label="%s.bias_node" % name)
+                    bias_node = nengo.Node([1], label="%s.bias" % name)
                     nengo.Connection(
                         bias_node, obj, transform=biases[:, None], synapse=None
                     )
@@ -1137,7 +1137,9 @@ class ConvertBatchNormalization(LayerConverter):
         broadcast_bias = np.ravel(broadcast_bias)
 
         # connect up bias node to output
-        bias_node = nengo.Node(broadcast_bias)
+        bias_node = nengo.Node(
+            broadcast_bias, label="%s.%d.bias" % (self.layer.name, node_id)
+        )
         conn = nengo.Connection(bias_node, output, synapse=None)
         self.converter.net.config[conn].trainable = False
 
@@ -1222,7 +1224,7 @@ class ConvertConv(LayerConverter):
             # bias parameter shared across all the spatial dimensions
 
             # add trainable bias weights
-            bias_node = nengo.Node([1])
+            bias_node = nengo.Node([1], label="%s.%d.bias" % (self.layer.name, node_id))
             bias_relay = nengo.Node(size_in=len(biases))
             nengo.Connection(
                 bias_node, bias_relay, transform=biases[:, None], synapse=None
