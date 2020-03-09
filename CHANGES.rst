@@ -21,16 +21,8 @@ Release history
 3.1.1 (unreleased)
 ------------------
 
-
-3.1.0 (March 4, 2020)
----------------------
-
 **Added**
 
-- Added ``inference_only=True`` option to the Converter, which will allow some
-  Layers/parameters that cannot be fully converted to native Nengo objects to be
-  converted in a way that only matches the inference behaviour of the source Keras model
-  (not the training behaviour). (`#119`_)
 - Added ``nengo_dl.LeakyReLU`` and ``nengo_dl.SpikingLeakyReLU`` neuron models.
   (`#126`_)
 - Added support for leaky ReLU Keras layers to ``nengo_dl.Converter``. (`#126`_)
@@ -41,6 +33,29 @@ Release history
 - Added ``Converter.layers`` attribute which will map Keras layers/tensors to
   the converted Nengo objects, to make it easier to access converted components.
   (`#134`_)
+
+**Changed**
+
+- Re-enabled the ``remove_constant_copies`` graph simplification by default. (`#129`_)
+- Reduced the amount of state that needs to be stored in the simulation. (`#129`_)
+- Added more information to the error message when loading saved parameters that
+  don't match the current model. (`#129`_)
+- More efficient implementation of convolutional biases in the Converter. (`#130`_)
+
+.. _#126: https://github.com/nengo/nengo-dl/pull/126
+.. _#129: https://github.com/nengo/nengo-dl/pull/129
+.. _#130: https://github.com/nengo/nengo-dl/pull/130
+.. _#134: https://github.com/nengo/nengo-dl/pull/134
+
+3.1.0 (March 4, 2020)
+---------------------
+
+**Added**
+
+- Added ``inference_only=True`` option to the Converter, which will allow some
+  Layers/parameters that cannot be fully converted to native Nengo objects to be
+  converted in a way that only matches the inference behaviour of the source Keras model
+  (not the training behaviour). (`#119`_)
 
 **Changed**
 
@@ -59,11 +74,6 @@ Release history
   (see `Nengo#1591`_). Note that this may change the number of trainable
   parameters in a network as the scalar default ``transform=1`` weights on
   non-Ensemble connections will no longer be present. (`#128`_)
-- Re-enabled the ``remove_constant_copies`` graph simplification by default. (`#129`_)
-- Reduced the amount of state that needs to be stored in the simulation. (`#129`_)
-- Added more information to the error message when loading saved parameters that
-  don't match the current model. (`#129`_)
-- More efficient implementation of convolutional biases in the Converter. (`#130`_)
 
 **Fixed**
 
@@ -78,11 +88,7 @@ Release history
 - Fixed compatibility with ``progressbar2`` version 3.50.0. (`#136`_)
 
 .. _#119: https://github.com/nengo/nengo-dl/pull/119
-.. _#126: https://github.com/nengo/nengo-dl/pull/126
 .. _#128: https://github.com/nengo/nengo-dl/pull/128
-.. _#129: https://github.com/nengo/nengo-dl/pull/129
-.. _#130: https://github.com/nengo/nengo-dl/pull/130
-.. _#134: https://github.com/nengo/nengo-dl/pull/134
 .. _#136: https://github.com/nengo/nengo-dl/pull/136
 .. _Nengo#1591: https://github.com/nengo/nengo/pull/1591
 
